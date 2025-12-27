@@ -17,15 +17,23 @@
         }
         .header { font-size: 22px; font-weight: bold; color: #333; margin-bottom: 20px; }
         #currentResult { 
-            font-size: 90px; 
+            font-size: 70px; /* 폰트 크기 조정 */
             font-weight: bold; 
-            margin: 20px 0;
+            margin: 10px 0;
             transition: color 0.5s ease-in-out;
+            display: block; /* 줄 바꿈을 위해 블록 요소로 */
         }
         .odd { color: #e74c3c; /* 홀수: 빨강 */ }
         .even { color: #337ab7; /* 짝수: 파랑 */ }
-        #nextCycle { font-size: 16px; color: #666; margin-top: 10px; }
-        #timer { font-size: 36px; font-weight: bold; color: #4A90E2; margin-bottom: 15px; }
+        .time-label { 
+            display: block; 
+            font-size: 24px; /* 시간 레이블 크기 */
+            font-weight: normal;
+            color: #666;
+            margin-top: -10px; /* 결과와 시간을 가깝게 배치 */
+        }
+        #timer { font-size: 36px; font-weight: bold; color: #4A90E2; margin-top: 15px; margin-bottom: 10px; }
+        #nextCycle { font-size: 16px; color: #666; }
         .info { font-size: 14px; color: #999; margin-top: 20px; }
         /* ------------------------------------------------ */
     </style>
@@ -33,7 +41,10 @@
 <body>
 <div id="result-container">
     <div class="header">🎲 KST 4분 주기 홀짝 결과</div>
-    <div id="currentResult" class="odd">-</div>
+    <div id="currentResult" class="odd">
+        -
+        <span id="resultTime" class="time-label">-</span>
+    </div>
     <div id="timer">00:00</div>
     <div id="nextCycle"></div>
     <div class="info">※ 이 결과는 모든 사용자에게 동일하게 표시됩니다.</div>
@@ -46,9 +57,8 @@ const CYCLE_DURATION_MS = 4 * 60 * 1000; // 4분 주기
 
 let nextCycleTimer;
 
-// 결정론적 난수 생성기 (결과를 고정하기 위함)
+// 결정론적 난수 생성기
 function lcgRandom(seed) {
-    // KST 시간 기반 시드
     seed = (seed * 1664525 + 1013904223) & 0xFFFFFFFF; 
     return seed / 4294967296;
 }
@@ -59,10 +69,12 @@ function getSynchronizedResult() {
     const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
     const kstTime = utcTime + KST_OFFSET_MS;
     
-    // 현재 실행 중인 4분 주기의 시드 (모두에게 동일)
     const currentSeed = Math.floor(kstTime / CYCLE_DURATION_MS);
     
-    // 다음 주기 시작 시각
+    // 현재 회차 시작 시각 계산 (4분 주기의 시작 시점)
+    const currentCycleStartTimeMs = currentSeed * CYCLE_DURATION_MS;
+    const currentCycleStartTime = new Date(currentCycleStartTimeMs);
+
     const nextCycleTimeMs = (currentSeed + 1) * CYCLE_DURATION_MS;
     const nextCycleDate = new Date(nextCycleTimeMs);
     
@@ -73,23 +85,31 @@ function getSynchronizedResult() {
     const isOdd = randomNumber % 2 !== 0;
     const result = isOdd ? '홀' : '짝';
 
+    // 표시할 시각 포맷 (YYYY.MM.DD HH:MM)
+    const timeDisplay = currentCycleStartTime.toLocaleTimeString('ko-KR', {
+        year: '2-digit', month: '2-digit', day: '2-digit', 
+        hour: '2-digit', minute: '2-digit', hour12: false, 
+        timeZone: 'Asia/Seoul'
+    }).replace(/\.\s/g, '.').replace(' ', ' '); // 포맷 조정
+    
+    // 예: "25.12.27 15:24"
+
     return { 
         nextCycleTime: nextCycleDate, 
         result, 
-        number: randomNumber 
+        timeDisplay 
     };
 }
 
 // UI 업데이트
 function updateDisplay() {
-    const { nextCycleTime, result, number } = getSynchronizedResult();
+    const { nextCycleTime, result, timeDisplay } = getSynchronizedResult();
     const now = new Date();
     const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
     const nowMs = utcTime + KST_OFFSET_MS;
     const diffMs = nextCycleTime.getTime() - nowMs;
     
     if (diffMs <= 0) {
-        // 정확히 주기가 변경되는 시점, 재계산
         initResultDisplay(); 
         return;
     }
@@ -100,17 +120,21 @@ function updateDisplay() {
     const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     
     const resultDiv = document.getElementById('currentResult');
+    const timeLabelDiv = document.getElementById('resultTime');
     const timerDiv = document.getElementById('timer');
     const cycleDiv = document.getElementById('nextCycle');
 
-    // 결과 표시
-    resultDiv.textContent = `${result} (${number})`;
+    // 결과 표시: 홀/짝
+    resultDiv.firstChild.textContent = result;
     resultDiv.className = result === '홀' ? 'odd' : 'even';
+    
+    // 시간 표시: YYYY.MM.DD HH:MM
+    timeLabelDiv.textContent = timeDisplay;
     
     // 타이머 및 다음 회차 시각 표시
     timerDiv.textContent = timeString;
     cycleDiv.textContent = 
-        `다음 결과까지 남은 시간: ${nextCycleTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`;
+        `다음 결과 변경 시각: ${nextCycleTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`;
 }
 
 function initResultDisplay() {
