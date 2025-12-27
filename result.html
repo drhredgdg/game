@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>홀짝 게임 기록 (로컬)</title>
+    <meta charset="UTF-8">
+    <style>
+        /* ------------------ 스타일 (CSS) ------------------ */
+        body { background: #111; color: #fff; font-family: Arial, sans-serif; margin: 0; }
+        .wrap { max-width: 1100px; margin: 0 auto; display: flex; height: 100vh; padding-top: 40px; }
+        .center { display: flex; flex-direction: column; justify-content: flex-start; align-items: center; width: 400px; padding-right: 20px; }
+        .side { flex: 1; background: #1a1a1a; padding: 16px; height: 90vh; overflow-y: auto; border-left: 1px solid #222; border-radius: 5px; }
+        .big-header { font-size: 48px; font-weight: bold; margin-bottom: 10px; color: #fff; }
+        #meta { font-size: 18px; color: #aaf; margin-top: 6px; }
+        #nextCycleInfo { margin-top: 20px; font-size: 24px; color: #fff; }
+        .history-item { padding: 8px; border-bottom: 1px solid #222; font-size: 14px; }
+        #loading { margin-top: 50px; font-size: 20px; color: #777; }
+        .history-header { font-size: 20px; font-weight: bold; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="center">
+        <div class="big-header">YGOSU</div>
+        <div id="meta">로컬 기록을 불러오는 중...</div>
+        <div id="nextCycleInfo"></div>
+        <div id="loading">로딩 중...</div>
+    </div>
+    <div class="side">
+        <div class="history-header">나의 게임 기록 (최근)</div>
+        <div id="history"></div>
+    </div>
+</div>
+
+<script>
+// JavaScript 로직 (동기화 및 기록 불러오기)
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const CYCLE_DURATION_MS = 4 * 60 * 1000; 
+const HISTORY_KEY = 'ygosu_holjak_history';
+
+// KST 동기화 정보 재계산 (타이머)
+function getSynchronizedTime() {
+    const now = new Date();
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+    const kstTime = utcTime + KST_OFFSET_MS;
+    
+    const seed = Math.floor(kstTime / CYCLE_DURATION_MS);
+    const nextCycleTimeMs = (seed + 1) * CYCLE_DURATION_MS;
+    const nextCycleDate = new Date(nextCycleTimeMs);
+    
+    return { nextCycleTime: nextCycleDate };
+}
+
+function updateTimer() {
+    const { nextCycleTime } = getSynchronizedTime();
+    const now = new Date();
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+    const nowMs = utcTime + KST_OFFSET_MS;
+    const diffMs = nextCycleTime.getTime() - nowMs;
+    
+    if (diffMs < 0) {
+        document.getElementById('meta').innerText = '새로운 회차 계산 중...';
+        setTimeout(updateTimer, 500);
+        return;
+    }
+
+    const mm = Math.floor(diffMs / (60 * 1000));
+    const ss = Math.floor((diffMs % (60 * 1000)) / 1000);
+
+    document.getElementById('meta').innerText =
+      `다음 회차 시작까지 ${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} 남음`;
+    
+    document.getElementById('nextCycleInfo').innerText = 
+        `다음 회차 시작: ${nextCycleTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`;
+}
+
+
+// 기록 표시
+function loadHistoryAndDisplay(){
+    const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    const container = document.getElementById('history');
+    const loadingDiv = document.getElementById('loading');
+    
+    loadingDiv.style.display = 'none';
+
+    if (history.length === 0) {
+        container.innerHTML = '<div style="color: #777; margin-top: 10px;">게임 기록이 없습니다. 홀짝 게임을 먼저 이용해 주세요.</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    history.forEach(line => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        div.innerText = line;
+        container.appendChild(div);
+    });
+}
+
+
+// 초기화
+function initDashboard() {
+    loadHistoryAndDisplay();
+    setInterval(updateTimer, 1000);
+    updateTimer();
+}
+
+window.onload = initDashboard;
+</script>
+</body>
+</html>
