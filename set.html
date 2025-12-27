@@ -1,67 +1,54 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>홀짝 동기화 게임</title>
+    <title>동기화 홀짝 결과 표시기</title>
     <meta charset="UTF-8">
     <style>
         /* ------------------ 스타일 (CSS) ------------------ */
-        body { margin: 0; padding: 0; background-color: #f9f9f9; font-family: Arial, sans-serif; }
-        #holjak-game-container {
-            border: 2px solid #4A90E2;
-            padding: 20px;
-            border-radius: 10px;
+        body { margin: 0; padding: 0; background-color: #f9f9f9; font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #result-container {
+            border: 3px solid #4A90E2;
+            padding: 30px 40px;
+            border-radius: 12px;
             text-align: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-            max-width: 450px; 
-            margin: 0 auto;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            max-width: 400px; 
+            background-color: white;
         }
-        .game-header { font-size: 20px; font-weight: bold; color: #333; margin-bottom: 10px; }
-        .game-stats { font-size: 16px; margin-bottom: 10px; }
-        #coinDisplay { font-weight: bold; color: #e74c3c; font-size: 24px; }
-        #nextCycle { font-size: 14px; color: #337ab7; margin-bottom: 15px; font-weight: bold; }
-        .game-area button { padding: 12px 25px; margin: 0 15px; font-size: 18px; font-weight: bold; cursor: pointer; border: none; border-radius: 8px; transition: background-color 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        #betOdd { background-color: #5cb85c; color: white; }
-        #betOdd:hover { background-color: #449d44; }
-        #betEven { background-color: #337ab7; color: white; }
-        #betEven:hover { background-color: #286090; }
-        #gameResult { margin-top: 20px; font-size: 16px; min-height: 20px; }
-        .win { color: #5cb85c; font-weight: bold; }
-        .lose { color: #e74c3c; font-weight: bold; }
-        .reset-btn { margin-top: 15px; background: #aaa; color: white; padding: 5px 10px; font-size: 12px; border-radius: 5px; }
+        .header { font-size: 22px; font-weight: bold; color: #333; margin-bottom: 20px; }
+        #currentResult { 
+            font-size: 90px; 
+            font-weight: bold; 
+            margin: 20px 0;
+            transition: color 0.5s ease-in-out;
+        }
+        .odd { color: #e74c3c; /* 홀수: 빨강 */ }
+        .even { color: #337ab7; /* 짝수: 파랑 */ }
+        #nextCycle { font-size: 16px; color: #666; margin-top: 10px; }
+        #timer { font-size: 36px; font-weight: bold; color: #4A90E2; margin-bottom: 15px; }
+        .info { font-size: 14px; color: #999; margin-top: 20px; }
         /* ------------------------------------------------ */
     </style>
 </head>
 <body>
-<div id="holjak-game-container">
-    <div class="game-header">🎲 홀짝 게임 (동기화 회차)</div>
+<div id="result-container">
+    <div class="header">🎲 KST 4분 주기 홀짝 결과</div>
+    <div id="currentResult" class="odd">-</div>
+    <div id="timer">00:00</div>
     <div id="nextCycle"></div>
-    <div class="game-stats">
-        잔여 코인: <span id="coinDisplay"></span> <br>
-        <span style="font-size:14px; color:#666;">(베팅액: 100 코인)</span>
-    </div>
-    <div class="game-area">
-        <button id="betOdd">홀 선택</button>
-        <button id="betEven">짝 선택</button>
-    </div>
-    <div id="gameResult">결과가 여기에 표시됩니다.</div>
-    <button class="reset-btn" id="resetData">코인 초기화 (1000 코인)</button>
-    <p style="margin-top:15px; font-size:12px;"><a id="dashboardLink" href="#" target="_blank">나의 기록 보러가기</a></p>
+    <div class="info">※ 이 결과는 모든 사용자에게 동일하게 표시됩니다.</div>
 </div>
 
 <script>
-// JavaScript 로직
-const INITIAL_COINS = 1000;
-const BET_AMOUNT = 100;
-const COINS_KEY = 'ygosu_holjak_coins';
-const HISTORY_KEY = 'ygosu_holjak_history';
+// JavaScript 로직 (순수 동기화 계산)
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000; // GMT+9
 const CYCLE_DURATION_MS = 4 * 60 * 1000; // 4분 주기
 
-let currentCoins;
 let nextCycleTimer;
 
-// 결정론적 난수 생성기
+// 결정론적 난수 생성기 (결과를 고정하기 위함)
 function lcgRandom(seed) {
+    // KST 시간 기반 시드
     seed = (seed * 1664525 + 1013904223) & 0xFFFFFFFF; 
     return seed / 4294967296;
 }
@@ -72,61 +59,38 @@ function getSynchronizedResult() {
     const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
     const kstTime = utcTime + KST_OFFSET_MS;
     
-    const seed = Math.floor(kstTime / CYCLE_DURATION_MS);
+    // 현재 실행 중인 4분 주기의 시드 (모두에게 동일)
+    const currentSeed = Math.floor(kstTime / CYCLE_DURATION_MS);
     
-    const nextCycleTimeMs = (seed + 1) * CYCLE_DURATION_MS;
+    // 다음 주기 시작 시각
+    const nextCycleTimeMs = (currentSeed + 1) * CYCLE_DURATION_MS;
     const nextCycleDate = new Date(nextCycleTimeMs);
     
-    const prngValue = lcgRandom(seed);
+    // 시드를 이용해 난수 결정
+    const prngValue = lcgRandom(currentSeed);
     const randomNumber = Math.floor(prngValue * 100) + 1;
     
     const isOdd = randomNumber % 2 !== 0;
     const result = isOdd ? '홀' : '짝';
 
-    return { seed, nextCycleTime: nextCycleDate, result, number: randomNumber };
+    return { 
+        nextCycleTime: nextCycleDate, 
+        result, 
+        number: randomNumber 
+    };
 }
 
-// 코인 및 UI 업데이트
-function updateCoinDisplay() {
-    const display = document.getElementById('coinDisplay');
-    if (display) {
-        display.textContent = currentCoins.toLocaleString();
-    }
-}
-
-function loadCoins() {
-    const stored = localStorage.getItem(COINS_KEY);
-    currentCoins = stored !== null ? parseInt(stored) : INITIAL_COINS;
-    updateCoinDisplay();
-}
-
-function saveCoins(coins) {
-    localStorage.setItem(COINS_KEY, coins.toString());
-    currentCoins = coins;
-    updateCoinDisplay();
-}
-
-// 기록 저장 및 관리
-function saveHistory(record) {
-    let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-    
-    history.unshift(record); // 최신 기록을 맨 앞에 추가
-    history = history.slice(0, 100); // 100개까지만 유지
-    
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-}
-
-// 타이머 업데이트
-function updateTimer() {
-    const { nextCycleTime } = getSynchronizedResult();
+// UI 업데이트
+function updateDisplay() {
+    const { nextCycleTime, result, number } = getSynchronizedResult();
     const now = new Date();
     const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
     const nowMs = utcTime + KST_OFFSET_MS;
     const diffMs = nextCycleTime.getTime() - nowMs;
     
     if (diffMs <= 0) {
-        clearInterval(nextCycleTimer);
-        initHoljakGame();
+        // 정확히 주기가 변경되는 시점, 재계산
+        initResultDisplay(); 
         return;
     }
 
@@ -135,80 +99,30 @@ function updateTimer() {
 
     const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     
-    document.getElementById('nextCycle').textContent = 
-        `⏱️ 다음 회차 시작: ${nextCycleTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })} (${timeString} 남음)`;
+    const resultDiv = document.getElementById('currentResult');
+    const timerDiv = document.getElementById('timer');
+    const cycleDiv = document.getElementById('nextCycle');
+
+    // 결과 표시
+    resultDiv.textContent = `${result} (${number})`;
+    resultDiv.className = result === '홀' ? 'odd' : 'even';
+    
+    // 타이머 및 다음 회차 시각 표시
+    timerDiv.textContent = timeString;
+    cycleDiv.textContent = 
+        `다음 결과까지 남은 시간: ${nextCycleTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`;
 }
 
-// 게임 실행 로직
-function runGame(userChoice) {
-    const resultDiv = document.getElementById('gameResult');
-    
-    if (currentCoins < BET_AMOUNT) {
-        resultDiv.className = 'lose';
-        resultDiv.textContent = "🚨 코인이 부족합니다! 초기화 버튼을 누르세요.";
-        return;
-    }
-
-    const { result: machineChoice, number: randomNumber } = getSynchronizedResult();
-
-    let newCoins = currentCoins - BET_AMOUNT;
-    let message = `이번 회차 결과: ${randomNumber} (${machineChoice})! `;
-    let resultClass = 'lose';
-
-    if (userChoice === machineChoice) {
-        newCoins += BET_AMOUNT * 2;
-        message += `🥳 승리! ${BET_AMOUNT} 코인 획득.`;
-        resultClass = 'win';
-    } else {
-        message += `😭 패배! ${BET_AMOUNT} 코인 잃음.`;
-    }
-
-    // 기록용 텍스트 생성
-    const now = new Date();
-    const ts = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    const date = now.toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' });
-
-    const recordText = `${date} ${ts} — ${randomNumber % 2 === 0 ? '짝' : '홀'} 결과: ${resultClass === 'win' ? '승' : '패'} (코인: ${newCoins})`;
-    
-    saveCoins(newCoins);
-    saveHistory(recordText);
-
-    resultDiv.className = resultClass;
-    resultDiv.textContent = message;
-}
-
-// 초기화 기능
-function resetData() {
-    if (confirm("정말로 코인을 초기화하시겠습니까? (1000 코인으로 재설정)")) {
-        saveCoins(INITIAL_COINS);
-        document.getElementById('gameResult').textContent = "코인이 초기화되었습니다.";
-        document.getElementById('gameResult').className = '';
-    }
-}
-
-// 초기화 및 이벤트 연결
-function initHoljakGame() {
-    loadCoins();
-    
+function initResultDisplay() {
     if (nextCycleTimer) {
         clearInterval(nextCycleTimer);
     }
     
-    updateTimer();
-    nextCycleTimer = setInterval(updateTimer, 1000);
-    
-    // 버튼 이벤트 연결 (혹시 모를 중복 방지)
-    document.getElementById('betOdd').onclick = () => runGame('홀');
-    document.getElementById('betEven').onclick = () => runGame('짝');
-    document.getElementById('resetData').onclick = resetData;
-    
-    // 대시보드 링크 URL 설정 (사용자님의 실제 URL로 대체해야 함)
-    // 🔴 중요: [YOUR_GITHUB_PAGES_BASE_URL] 부분을 실제 URL로 변경하세요.
-    const baseUrl = window.location.href.replace('holjak.html', '');
-    document.getElementById('dashboardLink').href = baseUrl + 'dashboard.html';
+    updateDisplay();
+    nextCycleTimer = setInterval(updateDisplay, 1000);
 }
 
-window.onload = initHoljakGame;
+window.onload = initResultDisplay;
 </script>
 </body>
 </html>
