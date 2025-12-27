@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>동기화 홀짝 결과 표시기</title>
+    <title>API 동기화 홀짝 결과 표시기</title>
     <meta charset="UTF-8">
     <style>
         /* ------------------ 스타일 (CSS) ------------------ */
@@ -17,20 +17,20 @@
         }
         .header { font-size: 22px; font-weight: bold; color: #333; margin-bottom: 20px; }
         #currentResult { 
-            font-size: 70px; /* 폰트 크기 조정 */
+            font-size: 70px; 
             font-weight: bold; 
             margin: 10px 0;
             transition: color 0.5s ease-in-out;
-            display: block; /* 줄 바꿈을 위해 블록 요소로 */
+            display: block; 
         }
         .odd { color: #e74c3c; /* 홀수: 빨강 */ }
         .even { color: #337ab7; /* 짝수: 파랑 */ }
         .time-label { 
             display: block; 
-            font-size: 24px; /* 시간 레이블 크기 */
+            font-size: 24px; 
             font-weight: normal;
             color: #666;
-            margin-top: -10px; /* 결과와 시간을 가깝게 배치 */
+            margin-top: -10px; 
         }
         #timer { font-size: 36px; font-weight: bold; color: #4A90E2; margin-top: 15px; margin-bottom: 10px; }
         #nextCycle { font-size: 16px; color: #666; }
@@ -40,35 +40,75 @@
 </head>
 <body>
 <div id="result-container">
-    <div class="header">🎲 KST 4분 주기 홀짝 결과</div>
+    <div class="header">🎲 KST 4분 주기 홀짝 결과 (API 동기화)</div>
     <div id="currentResult" class="odd">
         -
         <span id="resultTime" class="time-label">-</span>
     </div>
-    <div id="timer">00:00</div>
+    <div id="timer">로딩 중...</div>
     <div id="nextCycle"></div>
-    <div class="info">※ 이 결과는 모든 사용자에게 동일하게 표시됩니다.</div>
+    <div class="info">※ 이 결과는 외부 서버 시간(KST)을 기준으로 합니다.</div>
 </div>
 
 <script>
-// JavaScript 로직 (순수 동기화 계산)
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000; // GMT+9
+// JavaScript 로직 (API 기반 동기화 계산)
 const CYCLE_DURATION_MS = 4 * 60 * 1000; // 4분 주기
+const API_URL = 'https://worldtimeapi.org/api/timezone/Asia/Seoul';
 
 let nextCycleTimer;
+let timeGap = 0; // 서버 시간과 로컬 시간의 차이 (밀리초)
+let lastApiUpdateTime = 0; // 마지막으로 API 시간을 받은 로컬 시간
 
 // 결정론적 난수 생성기
 function lcgRandom(seed) {
+    // 난수 생성 로직은 동일합니다.
     seed = (seed * 1664525 + 1013904223) & 0xFFFFFFFF; 
     return seed / 4294967296;
 }
 
-// 시간 동기화 및 결과 계산
-function getSynchronizedResult() {
-    const now = new Date();
-    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
-    const kstTime = utcTime + KST_OFFSET_MS;
-    
+// 🔴 외부 API (WorldTimeAPI)를 통해 현재 KST 시간을 가져오고 timeGap을 계산
+async function calculateTimeGap() {
+    try {
+        const response = await fetch(API_URL);
+        if (!response.ok) throw new Error('API 응답 실패');
+        
+        const data = await response.json();
+        
+        // 서버에서 받은 정확한 KST 시간 (타임스탬프)
+        const serverTimeMs = new Date(data.datetime).getTime(); 
+        
+        // 현재 브라우저의 로컬 시간 (API 요청 후 응답 받은 시점)
+        const nowLocalTimeMs = new Date().getTime();
+        
+        // 서버 시간과 로컬 시간의 차이 계산 (이 차이가 timeGap입니다.)
+        timeGap = serverTimeMs - nowLocalTimeMs;
+        lastApiUpdateTime = nowLocalTimeMs;
+        
+        return serverTimeMs;
+
+    } catch (e) {
+        console.error("Time API 호출 오류 발생:", e);
+        // API 실패 시, timeGap을 0으로 설정하여 로컬 시간을 기준으로 계산하게 합니다.
+        timeGap = 0;
+        lastApiUpdateTime = new Date().getTime();
+        
+        // UTC 시간 + KST 오프셋으로 로컬 KST 시간을 반환합니다.
+        const now = new Date();
+        const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+        const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+        return utcTime + KST_OFFSET_MS;
+    }
+}
+
+// 🔴 보정된 KST 시간을 얻는 함수
+function getCorrectedKSTTime(nowLocalTimeMs) {
+    // 로컬 시간 + 타임 갭 = 서버 보정 시간. timeGap이 0이면 로컬 시간을 사용합니다.
+    return nowLocalTimeMs + timeGap;
+}
+
+
+// 시간 동기화 및 결과 계산 (TimeGap 사용)
+function getSynchronizedResult(kstTime) {
     const currentSeed = Math.floor(kstTime / CYCLE_DURATION_MS);
     
     // 현재 회차 시작 시각 계산 (4분 주기의 시작 시점)
@@ -85,31 +125,42 @@ function getSynchronizedResult() {
     const isOdd = randomNumber % 2 !== 0;
     const result = isOdd ? '홀' : '짝';
 
-    // 표시할 시각 포맷 (YYYY.MM.DD HH:MM)
+    // 표시할 시각 포맷
     const timeDisplay = currentCycleStartTime.toLocaleTimeString('ko-KR', {
         year: '2-digit', month: '2-digit', day: '2-digit', 
         hour: '2-digit', minute: '2-digit', hour12: false, 
         timeZone: 'Asia/Seoul'
-    }).replace(/\.\s/g, '.').replace(' ', ' '); // 포맷 조정
-    
-    // 예: "25.12.27 15:24"
+    }).replace(/\.\s/g, '.').replace(' ', ' ');
 
     return { 
         nextCycleTime: nextCycleDate, 
         result, 
-        timeDisplay 
+        timeDisplay,
+        kstTime // 보정된 KST 시간을 반환하여 다음 계산에 사용
     };
 }
 
 // UI 업데이트
-function updateDisplay() {
-    const { nextCycleTime, result, timeDisplay } = getSynchronizedResult();
-    const now = new Date();
-    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
-    const nowMs = utcTime + KST_OFFSET_MS;
-    const diffMs = nextCycleTime.getTime() - nowMs;
+async function updateDisplay() {
+    const nowLocalTimeMs = new Date().getTime();
+    
+    // 🔴 5초마다 API를 호출하여 TimeGap을 재계산합니다. (로컬 시간 조작 방지)
+    const API_REFRESH_INTERVAL = 5000;
+    if (nowLocalTimeMs - lastApiUpdateTime >= API_REFRESH_INTERVAL || lastApiUpdateTime === 0) {
+        await calculateTimeGap(); 
+    }
+
+    // 🔴 현재 보정된 KST 시간 계산
+    const kstTime = getCorrectedKSTTime(nowLocalTimeMs);
+
+    // 결과 계산
+    const { nextCycleTime, result, timeDisplay } = getSynchronizedResult(kstTime);
+
+    // 남은 시간 계산
+    const diffMs = nextCycleTime.getTime() - kstTime;
     
     if (diffMs <= 0) {
+        // 주기가 끝났거나 시간이 맞지 않는 경우, 즉시 재시작하여 새 주기 로드
         initResultDisplay(); 
         return;
     }
@@ -128,7 +179,7 @@ function updateDisplay() {
     resultDiv.firstChild.textContent = result;
     resultDiv.className = result === '홀' ? 'odd' : 'even';
     
-    // 시간 표시: YYYY.MM.DD HH:MM
+    // 시간 표시: YY.MM.DD HH:MM
     timeLabelDiv.textContent = timeDisplay;
     
     // 타이머 및 다음 회차 시각 표시
@@ -137,13 +188,16 @@ function updateDisplay() {
         `다음 결과 변경 시각: ${nextCycleTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`;
 }
 
+// 초기화
 function initResultDisplay() {
     if (nextCycleTimer) {
         clearInterval(nextCycleTimer);
     }
     
-    updateDisplay();
+    // 1초마다 업데이트
     nextCycleTimer = setInterval(updateDisplay, 1000);
+    // 첫 실행
+    updateDisplay();
 }
 
 window.onload = initResultDisplay;
