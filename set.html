@@ -45,24 +45,28 @@
     </div>
     <div id="gameResult">결과가 여기에 표시됩니다.</div>
     <button class="reset-btn" id="resetData">코인 초기화 (1000 코인)</button>
+    <p style="margin-top:15px; font-size:12px;"><a id="dashboardLink" href="#" target="_blank">나의 기록 보러가기</a></p>
 </div>
 
 <script>
 // JavaScript 로직
 const INITIAL_COINS = 1000;
 const BET_AMOUNT = 100;
-const STORAGE_KEY = 'ygosu_holjak_coins'; 
+const COINS_KEY = 'ygosu_holjak_coins';
+const HISTORY_KEY = 'ygosu_holjak_history';
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000; // GMT+9
 const CYCLE_DURATION_MS = 4 * 60 * 1000; // 4분 주기
 
 let currentCoins;
 let nextCycleTimer;
 
+// 결정론적 난수 생성기
 function lcgRandom(seed) {
     seed = (seed * 1664525 + 1013904223) & 0xFFFFFFFF; 
     return seed / 4294967296;
 }
 
+// 시간 동기화 및 결과 계산
 function getSynchronizedResult() {
     const now = new Date();
     const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
@@ -82,6 +86,7 @@ function getSynchronizedResult() {
     return { seed, nextCycleTime: nextCycleDate, result, number: randomNumber };
 }
 
+// 코인 및 UI 업데이트
 function updateCoinDisplay() {
     const display = document.getElementById('coinDisplay');
     if (display) {
@@ -90,17 +95,28 @@ function updateCoinDisplay() {
 }
 
 function loadCoins() {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(COINS_KEY);
     currentCoins = stored !== null ? parseInt(stored) : INITIAL_COINS;
     updateCoinDisplay();
 }
 
 function saveCoins(coins) {
-    localStorage.setItem(STORAGE_KEY, coins.toString());
+    localStorage.setItem(COINS_KEY, coins.toString());
     currentCoins = coins;
     updateCoinDisplay();
 }
 
+// 기록 저장 및 관리
+function saveHistory(record) {
+    let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    
+    history.unshift(record); // 최신 기록을 맨 앞에 추가
+    history = history.slice(0, 100); // 100개까지만 유지
+    
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+// 타이머 업데이트
 function updateTimer() {
     const { nextCycleTime } = getSynchronizedResult();
     const now = new Date();
@@ -123,6 +139,7 @@ function updateTimer() {
         `⏱️ 다음 회차 시작: ${nextCycleTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })} (${timeString} 남음)`;
 }
 
+// 게임 실행 로직
 function runGame(userChoice) {
     const resultDiv = document.getElementById('gameResult');
     
@@ -146,11 +163,21 @@ function runGame(userChoice) {
         message += `😭 패배! ${BET_AMOUNT} 코인 잃음.`;
     }
 
+    // 기록용 텍스트 생성
+    const now = new Date();
+    const ts = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const date = now.toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' });
+
+    const recordText = `${date} ${ts} — ${randomNumber % 2 === 0 ? '짝' : '홀'} 결과: ${resultClass === 'win' ? '승' : '패'} (코인: ${newCoins})`;
+    
     saveCoins(newCoins);
+    saveHistory(recordText);
+
     resultDiv.className = resultClass;
     resultDiv.textContent = message;
 }
 
+// 초기화 기능
 function resetData() {
     if (confirm("정말로 코인을 초기화하시겠습니까? (1000 코인으로 재설정)")) {
         saveCoins(INITIAL_COINS);
@@ -159,6 +186,7 @@ function resetData() {
     }
 }
 
+// 초기화 및 이벤트 연결
 function initHoljakGame() {
     loadCoins();
     
@@ -169,9 +197,15 @@ function initHoljakGame() {
     updateTimer();
     nextCycleTimer = setInterval(updateTimer, 1000);
     
-    document.getElementById('betOdd').addEventListener('click', () => runGame('홀'));
-    document.getElementById('betEven').addEventListener('click', () => runGame('짝'));
-    document.getElementById('resetData').addEventListener('click', resetData);
+    // 버튼 이벤트 연결 (혹시 모를 중복 방지)
+    document.getElementById('betOdd').onclick = () => runGame('홀');
+    document.getElementById('betEven').onclick = () => runGame('짝');
+    document.getElementById('resetData').onclick = resetData;
+    
+    // 대시보드 링크 URL 설정 (사용자님의 실제 URL로 대체해야 함)
+    // 🔴 중요: [YOUR_GITHUB_PAGES_BASE_URL] 부분을 실제 URL로 변경하세요.
+    const baseUrl = window.location.href.replace('holjak.html', '');
+    document.getElementById('dashboardLink').href = baseUrl + 'dashboard.html';
 }
 
 window.onload = initHoljakGame;
