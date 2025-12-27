@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>홀짝 동기화 게임</title>
+    <meta charset="UTF-8">
+    <style>
+        /* ------------------ 스타일 (CSS) ------------------ */
+        body { margin: 0; padding: 0; background-color: #f9f9f9; font-family: Arial, sans-serif; }
+        #holjak-game-container {
+            border: 2px solid #4A90E2;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            max-width: 450px; 
+            margin: 0 auto;
+        }
+        .game-header { font-size: 20px; font-weight: bold; color: #333; margin-bottom: 10px; }
+        .game-stats { font-size: 16px; margin-bottom: 10px; }
+        #coinDisplay { font-weight: bold; color: #e74c3c; font-size: 24px; }
+        #nextCycle { font-size: 14px; color: #337ab7; margin-bottom: 15px; font-weight: bold; }
+        .game-area button { padding: 12px 25px; margin: 0 15px; font-size: 18px; font-weight: bold; cursor: pointer; border: none; border-radius: 8px; transition: background-color 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        #betOdd { background-color: #5cb85c; color: white; }
+        #betOdd:hover { background-color: #449d44; }
+        #betEven { background-color: #337ab7; color: white; }
+        #betEven:hover { background-color: #286090; }
+        #gameResult { margin-top: 20px; font-size: 16px; min-height: 20px; }
+        .win { color: #5cb85c; font-weight: bold; }
+        .lose { color: #e74c3c; font-weight: bold; }
+        .reset-btn { margin-top: 15px; background: #aaa; color: white; padding: 5px 10px; font-size: 12px; border-radius: 5px; }
+        /* ------------------------------------------------ */
+    </style>
+</head>
+<body>
+<div id="holjak-game-container">
+    <div class="game-header">🎲 홀짝 게임 (동기화 회차)</div>
+    <div id="nextCycle"></div>
+    <div class="game-stats">
+        잔여 코인: <span id="coinDisplay"></span> <br>
+        <span style="font-size:14px; color:#666;">(베팅액: 100 코인)</span>
+    </div>
+    <div class="game-area">
+        <button id="betOdd">홀 선택</button>
+        <button id="betEven">짝 선택</button>
+    </div>
+    <div id="gameResult">결과가 여기에 표시됩니다.</div>
+    <button class="reset-btn" id="resetData">코인 초기화 (1000 코인)</button>
+</div>
+
+<script>
+// JavaScript 로직
+const INITIAL_COINS = 1000;
+const BET_AMOUNT = 100;
+const STORAGE_KEY = 'ygosu_holjak_coins'; 
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000; // GMT+9
+const CYCLE_DURATION_MS = 4 * 60 * 1000; // 4분 주기
+
+let currentCoins;
+let nextCycleTimer;
+
+function lcgRandom(seed) {
+    seed = (seed * 1664525 + 1013904223) & 0xFFFFFFFF; 
+    return seed / 4294967296;
+}
+
+function getSynchronizedResult() {
+    const now = new Date();
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+    const kstTime = utcTime + KST_OFFSET_MS;
+    
+    const seed = Math.floor(kstTime / CYCLE_DURATION_MS);
+    
+    const nextCycleTimeMs = (seed + 1) * CYCLE_DURATION_MS;
+    const nextCycleDate = new Date(nextCycleTimeMs);
+    
+    const prngValue = lcgRandom(seed);
+    const randomNumber = Math.floor(prngValue * 100) + 1;
+    
+    const isOdd = randomNumber % 2 !== 0;
+    const result = isOdd ? '홀' : '짝';
+
+    return { seed, nextCycleTime: nextCycleDate, result, number: randomNumber };
+}
+
+function updateCoinDisplay() {
+    const display = document.getElementById('coinDisplay');
+    if (display) {
+        display.textContent = currentCoins.toLocaleString();
+    }
+}
+
+function loadCoins() {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    currentCoins = stored !== null ? parseInt(stored) : INITIAL_COINS;
+    updateCoinDisplay();
+}
+
+function saveCoins(coins) {
+    localStorage.setItem(STORAGE_KEY, coins.toString());
+    currentCoins = coins;
+    updateCoinDisplay();
+}
+
+function updateTimer() {
+    const { nextCycleTime } = getSynchronizedResult();
+    const now = new Date();
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+    const nowMs = utcTime + KST_OFFSET_MS;
+    const diffMs = nextCycleTime.getTime() - nowMs;
+    
+    if (diffMs <= 0) {
+        clearInterval(nextCycleTimer);
+        initHoljakGame();
+        return;
+    }
+
+    const minutes = Math.floor(diffMs / (60 * 1000));
+    const seconds = Math.floor((diffMs % (60 * 1000)) / 1000);
+
+    const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    document.getElementById('nextCycle').textContent = 
+        `⏱️ 다음 회차 시작: ${nextCycleTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })} (${timeString} 남음)`;
+}
+
+function runGame(userChoice) {
+    const resultDiv = document.getElementById('gameResult');
+    
+    if (currentCoins < BET_AMOUNT) {
+        resultDiv.className = 'lose';
+        resultDiv.textContent = "🚨 코인이 부족합니다! 초기화 버튼을 누르세요.";
+        return;
+    }
+
+    const { result: machineChoice, number: randomNumber } = getSynchronizedResult();
+
+    let newCoins = currentCoins - BET_AMOUNT;
+    let message = `이번 회차 결과: ${randomNumber} (${machineChoice})! `;
+    let resultClass = 'lose';
+
+    if (userChoice === machineChoice) {
+        newCoins += BET_AMOUNT * 2;
+        message += `🥳 승리! ${BET_AMOUNT} 코인 획득.`;
+        resultClass = 'win';
+    } else {
+        message += `😭 패배! ${BET_AMOUNT} 코인 잃음.`;
+    }
+
+    saveCoins(newCoins);
+    resultDiv.className = resultClass;
+    resultDiv.textContent = message;
+}
+
+function resetData() {
+    if (confirm("정말로 코인을 초기화하시겠습니까? (1000 코인으로 재설정)")) {
+        saveCoins(INITIAL_COINS);
+        document.getElementById('gameResult').textContent = "코인이 초기화되었습니다.";
+        document.getElementById('gameResult').className = '';
+    }
+}
+
+function initHoljakGame() {
+    loadCoins();
+    
+    if (nextCycleTimer) {
+        clearInterval(nextCycleTimer);
+    }
+    
+    updateTimer();
+    nextCycleTimer = setInterval(updateTimer, 1000);
+    
+    document.getElementById('betOdd').addEventListener('click', () => runGame('홀'));
+    document.getElementById('betEven').addEventListener('click', () => runGame('짝'));
+    document.getElementById('resetData').addEventListener('click', resetData);
+}
+
+window.onload = initHoljakGame;
+</script>
+</body>
+</html>
