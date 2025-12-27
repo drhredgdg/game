@@ -4,7 +4,7 @@
     <title>API 동기화 홀짝 결과 표시기</title>
     <meta charset="UTF-8">
     <style>
-        /* ------------------ 스타일 (CSS) ------------------ */
+        /* ------------------ 스타일 (CSS) - 원래 디자인 복원 ------------------ */
         body { margin: 0; padding: 0; background-color: #f9f9f9; font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
         #result-container {
             border: 3px solid #4A90E2;
@@ -60,27 +60,16 @@ let timeGap = 0; // 서버 시간과 로컬 시간의 차이 (밀리초)
 let lastApiUpdateTime = 0; // 마지막으로 API 시간을 받은 로컬 시간
 
 // 🆕 변경된 난수 생성기: xorshift와 비슷한 원리를 사용한 결정론적 난수 생성 (PRNG)
-// 시드(currentSeed)에 따라 항상 동일한 결과를 반환합니다.
 function prng(seed) {
-    // 64비트 시드를 사용하여 난수 품질 개선 (시드는 Math.floor(kstTime / CYCLE_DURATION_MS))
-    // JavaScript는 내부적으로 숫자를 64비트 부동소수점으로 처리하지만,
-    // 비트 연산을 통해 32비트 정수 연산처럼 보이게 처리하여 결정론적 결과를 유지합니다.
     let x = BigInt(seed);
     
-    x ^= x << 13n; // 좌측 이동
-    x ^= x >> 7n; // 우측 이동
-    x ^= x << 17n; // 좌측 이동
+    x ^= x << 13n;
+    x ^= x >> 7n;
+    x ^= x << 17n;
     
-    // 64비트 BigInt를 0부터 1 사이의 부동소수점으로 변환하여 반환
-    // 2^53 (Number.MAX_SAFE_INTEGER)로 나누어 부동소수점의 정밀도 한계 내에서 난수 생성
     const maxSafeInt = BigInt(Math.pow(2, 53));
-    
-    // 결과가 음수가 되지 않도록 절대값을 취하거나, 0xFFFFFFFFFFFFFFFFn 마스크를 씌울 수 있습니다.
-    // 여기서는 간단히 BigInt(Math.abs(Number(x)))로 처리하고, 부동소수점으로 변환합니다.
-    // x % maxSafeInt를 사용하여 난수 범위를 제한합니다.
     const result = Number(x % maxSafeInt);
     
-    // 0 이상 maxSafeInt 미만의 값을 maxSafeInt로 나누어 [0, 1) 범위의 난수를 반환합니다.
     return (result < 0 ? result + Number(maxSafeInt) : result) / Number(maxSafeInt);
 }
 
@@ -92,13 +81,9 @@ async function calculateTimeGap() {
         
         const data = await response.json();
         
-        // 서버에서 받은 정확한 KST 시간 (타임스탬프)
         const serverTimeMs = new Date(data.datetime).getTime(); 
-        
-        // 현재 브라우저의 로컬 시간 (API 요청 후 응답 받은 시점)
         const nowLocalTimeMs = new Date().getTime();
         
-        // 서버 시간과 로컬 시간의 차이 계산 (이 차이가 timeGap입니다.)
         timeGap = serverTimeMs - nowLocalTimeMs;
         lastApiUpdateTime = nowLocalTimeMs;
         
@@ -106,11 +91,9 @@ async function calculateTimeGap() {
 
     } catch (e) {
         console.error("Time API 호출 오류 발생:", e);
-        // API 실패 시, timeGap을 0으로 설정하여 로컬 시간을 기준으로 계산하게 합니다.
         timeGap = 0;
         lastApiUpdateTime = new Date().getTime();
         
-        // UTC 시간 + KST 오프셋으로 로컬 KST 시간을 반환합니다.
         const now = new Date();
         const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
         const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
@@ -120,7 +103,6 @@ async function calculateTimeGap() {
 
 // 🔴 보정된 KST 시간을 얻는 함수
 function getCorrectedKSTTime(nowLocalTimeMs) {
-    // 로컬 시간 + 타임 갭 = 서버 보정 시간. timeGap이 0이면 로컬 시간을 사용합니다.
     return nowLocalTimeMs + timeGap;
 }
 
@@ -138,8 +120,6 @@ function getSynchronizedResult(kstTime) {
     
     // 🆕 변경된 PRNG 함수를 이용해 난수 결정
     const prngValue = prng(currentSeed);
-    
-    // 난수 생성 범위는 1~100으로 동일하게 유지
     const randomNumber = Math.floor(prngValue * 100) + 1;
     
     const isOdd = randomNumber % 2 !== 0;
@@ -156,7 +136,7 @@ function getSynchronizedResult(kstTime) {
         nextCycleTime: nextCycleDate, 
         result, 
         timeDisplay,
-        kstTime // 보정된 KST 시간을 반환하여 다음 계산에 사용
+        kstTime 
     };
 }
 
@@ -164,13 +144,13 @@ function getSynchronizedResult(kstTime) {
 async function updateDisplay() {
     const nowLocalTimeMs = new Date().getTime();
     
-    // 🔴 5초마다 API를 호출하여 TimeGap을 재계산합니다. (로컬 시간 조작 방지)
+    // 5초마다 API를 호출하여 TimeGap을 재계산합니다.
     const API_REFRESH_INTERVAL = 5000;
     if (nowLocalTimeMs - lastApiUpdateTime >= API_REFRESH_INTERVAL || lastApiUpdateTime === 0) {
         await calculateTimeGap(); 
     }
 
-    // 🔴 현재 보정된 KST 시간 계산
+    // 현재 보정된 KST 시간 계산
     const kstTime = getCorrectedKSTTime(nowLocalTimeMs);
 
     // 결과 계산
