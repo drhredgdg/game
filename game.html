@@ -6,23 +6,17 @@ import io
 app = Flask(__name__)
 
 def calculate_result_by_hashing(seed):
-    # 사용자님의 game.html 내 BigInt 해싱 로직을 파이썬으로 완벽 이식
-    # hash = BigInt(seed) * 16777619n
+    # game.html의 해싱 로직 이식
     hash_val = int(seed) * 16777619
-    # hash = (hash ^ (hash >> 13n)) * 131n
     hash_val = (hash_val ^ (hash_val >> 13)) * 131
-    # hash = (hash ^ (hash >> 15n))
     hash_val = (hash_val ^ (hash_val >> 15))
-    
     hex_str = hex(hash_val).upper()
     last_char = hex_str[-1]
-    
     try:
         last_digit = int(last_char, 16)
     except:
         last_digit = 0
-        
-    return "홀" if last_digit % 2 != 0 else "짝"
+    return "ODD" if last_digit % 2 != 0 else "EVEN"
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -32,48 +26,43 @@ def get_result(path):
         now = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
         kst_ts_ms = int(now.timestamp() * 1000)
         
-        # 2. 4분 주기 (240,000ms)
+        # 2. 4분 주기 시드 계산
         cycle_ms = 4 * 60 * 1000
         seed = kst_ts_ms // cycle_ms
         result_text = calculate_result_by_hashing(seed)
         
-        # 3. 이미지 생성 (game.html 디자인 재현)
-        # 배경 #f9f9f9, 크기 400x320
+        # 3. 이미지 그리기 (400x320 크기)
         img = Image.new('RGB', (400, 320), color='#f9f9f9')
         d = ImageDraw.Draw(img)
         
-        # 4. 흰색 컨테이너 배경 및 파란 테두리 (border: 3px solid #4A90E2)
+        # 4. 중앙 컨테이너 및 테두리 (#4A90E2 색상)
         d.rectangle([20, 20, 380, 300], fill="white", outline="#4A90E2", width=4)
         
-        # 5. 헤더 (🎲 와이고수 4분주기 홀짝 결과)
+        # 5. 헤더 및 결과 표시
+        res_color = "#e74c3c" if result_text == "ODD" else "#337ab7"
         d.text((80, 45), "🎲 YGOSU 4MIN RESULT", fill="#333333")
         
-        # 6. 중앙 결과 표시 (홀/짝)
-        # 폰트가 없으므로 색상 박스로 강조
-        res_color = "#e74c3c" if result_text == "홀" else "#337ab7"
+        # 중앙 결과 박스 (큰 글씨 효과)
         d.rectangle([130, 85, 270, 165], fill=res_color)
+        d.text((175, 115), result_text, fill="white")
         
-        # 결과 텍스트 (한글 깨짐 방지를 위해 ODD/EVEN 병기 혹은 영어 추천하나, 
-        # 일단 로직 확인을 위해 영어로 표기 - 한글 폰트 추가 전까지는 영어가 안전합니다)
-        display_text = "ODD" if result_text == "홀" else "EVEN"
-        d.text((175, 115), display_text, fill="white")
-        
-        # 7. 타이머 (#timer 스타일)
+        # 6. 타이머 및 시간 정보
         rem_sec = 240 - (int(now.timestamp()) % 240)
         timer_str = f"{rem_sec // 60:02d}:{rem_sec % 60:02d}"
         d.text((175, 185), timer_str, fill="#4A90E2")
         
-        # 8. 하단 정보
-        next_ts = (seed + 1) * cycle_ms
-        next_dt = datetime.datetime.fromtimestamp(next_ts / 1000)
+        next_dt = datetime.datetime.fromtimestamp(((seed + 1) * cycle_ms) / 1000)
         d.text((130, 230), f"NEXT: {next_dt.strftime('%H:%M')}", fill="#666666")
-        d.text((80, 270), "※ SYNCED WITH EXTERNAL SERVER", fill="#999999")
+        d.text((90, 275), "SYNCED WITH KST SERVER", fill="#999999")
 
-        # 9. 전송 (캐시 방지 적용)
+        # 7. 전송 (cache_timeout 대신 max_age 사용 - 에러 해결 핵심)
         img_io = io.BytesIO()
         img.save(img_io, 'PNG')
         img_io.seek(0)
+        
+        # 최신 Flask 규격에 맞게 max_age=0 설정
         return send_file(img_io, mimetype='image/png', max_age=0)
         
     except Exception as e:
+        # 에러 발생 시 화면에 에러 내용 출력
         return str(e), 500
